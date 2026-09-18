@@ -1,0 +1,10 @@
+# Build outputs
+dist/
+
+# Local development config and secrets
+config.yaml
+qobuz-secrets.json
+*.json
+
+# Temp build directory used by install.sh
+/tmp/gobz-connect-build/
