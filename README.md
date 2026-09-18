@@ -1,5 +1,7 @@
 # gobz-connect
 
+🇫🇷 [Lire ce document en français](README.fr.md)
+
 A Qobuz Connect renderer written in Go, purpose-built to run on a **Raspberry
 Pi** — streaming audio over HDMI straight into an amplifier or AV receiver,
 with HDMI-CEC control so the amp powers on/off and switches input

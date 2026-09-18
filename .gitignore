@@ -1,4 +1,6 @@
-# Build outputs
+# Build outputs — anchored to repo root so they don't also match the
+# cmd/gobz-connect/ source directory.
+/gobz-connect
 dist/
 
 # Local development config and secrets

@@ -1,5 +1,7 @@
 # Authentication
 
+🇫🇷 [Lire ce document en français](AUTHENTICATION.fr.md)
+
 ## Background
 
 As of April 2026, Qobuz added reCAPTCHA to their `user/login` API endpoint, breaking
