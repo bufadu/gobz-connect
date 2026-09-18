@@ -29,9 +29,6 @@ user_id: "12345678"
 user_auth_token: "your-user-auth-token-here"
 ```
 
-Les champs `email` et `password` ne sont plus nécessaires et peuvent être
-supprimés ou laissés vides.
-
 ## Durée de vie du token
 
 `user_auth_token` est un token de session longue durée — il n'expire pas

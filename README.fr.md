@@ -16,12 +16,6 @@ lui envoyer de l'audio, exactement comme un appareil Chromecast ou Sonos.
 - **Pensé pour Raspberry Pi en priorité** : conçu pour tourner sans écran sur
   un Pi, avec l'ampli/ampli-tuner branché directement en HDMI — pas besoin de
   DAC ou de carte son séparée.
-- **HDMI-CEC** *(expérimental)* : allume automatiquement l'ampli au démarrage
-  de la lecture, bascule son entrée sur le Pi, et l'envoie en veille après
-  une période d'inactivité. Les implémentations CEC varient beaucoup selon
-  les marques et modèles d'amplis — ça peut ne pas fonctionner avec tous les
-  amplis. Voir [Raspberry Pi — configuration HDMI & CEC](#raspberry-pi--configuration-hdmi--cec)
-  plus bas.
 - **Lecture sans coupure (gapless)** entre les morceaux qui partagent la même
   fréquence d'échantillonnage — le cas le plus courant pour la plupart des
   albums et playlists.
@@ -32,7 +26,13 @@ lui envoyer de l'audio, exactement comme un appareil Chromecast ou Sonos.
   pour qu'un Pi gère le Hi-Res sans à-coups. Voir
   [Comportement de la sortie audio](#comportement-de-la-sortie-audio) plus bas.
 - Fonctionne aussi très bien sur **macOS** (CoreAudio) pour un usage
-  quotidien, pas seulement pour le développement.
+  quotidien.
+- **HDMI-CEC** *(expérimental)* : allume automatiquement l'ampli au démarrage
+  de la lecture, bascule son entrée sur le Pi, et l'envoie en veille après
+  une période d'inactivité. Les implémentations CEC varient beaucoup selon
+  les marques et modèles d'amplis — ça peut ne pas fonctionner avec tous les
+  amplis. Voir [Raspberry Pi — configuration HDMI & CEC](#raspberry-pi--configuration-hdmi--cec)
+  plus bas.
 
 ---
 
@@ -77,7 +77,7 @@ sudo nano /etc/gobz-connect/config.yaml
 
 Un exemple commenté y est écrit lors de la première installation. Renseigne
 au minimum `user_id` et `user_auth_token` (voir
-[AUTHENTICATION.md](AUTHENTICATION.md)), ou active
+[AUTHENTICATION.fr.md](AUTHENTICATION.fr.md)), ou active
 `unauthenticated_mode: true`. Voir la [référence complète](#référence-complète)
 plus bas pour tous les réglages disponibles.
 
@@ -130,7 +130,7 @@ configurés localement.
 ### Exemple minimal
 
 ```yaml
-# Authentification par token — voir AUTHENTICATION.md pour savoir comment les obtenir
+# Authentification par token — voir AUTHENTICATION.fr.md pour savoir comment les obtenir
 user_id: "123456789"
 user_auth_token: "your_auth_token_here"
 
@@ -142,7 +142,7 @@ port: 1984
 
 ```yaml
 # ── Authentification ────────────────────────────────────────────────────────
-# Voir AUTHENTICATION.md pour savoir comment obtenir ces valeurs.
+# Voir AUTHENTICATION.fr.md pour savoir comment obtenir ces valeurs.
 user_id: ""             # User ID depuis le lecteur web Qobuz
 user_auth_token: ""     # Token d'authentification depuis le lecteur web Qobuz
 

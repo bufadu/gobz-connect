@@ -15,11 +15,6 @@ stream audio to it, just like a Chromecast or Sonos device.
 - **Raspberry Pi first**: designed to run headless on a Pi, with the amp/AV
   receiver connected directly over HDMI — no separate DAC or sound card
   needed.
-- **HDMI-CEC** *(experimental)*: automatically powers the amp on when playback
-  starts, switches its input to the Pi, and sends it to standby after
-  inactivity. CEC implementations vary a lot between amp brands and models —
-  it may not work with every amplifier. See
-  [Raspberry Pi — HDMI & CEC setup](#raspberry-pi--hdmi--cec-setup) below.
 - **Gapless playback** across tracks that share the same sample rate — the
   common case for most albums and playlists.
 - **Full audio format support up to Hi-Res 192 kHz/24-bit, even on a
@@ -27,8 +22,12 @@ stream audio to it, just like a Chromecast or Sonos device.
   device at each track's native rate instead of resampling, keeping CPU usage
   low enough for a Pi to handle Hi-Res without choppy playback. See
   [Audio output behaviour](#audio-output-behaviour) below.
-- Also runs well on **macOS** (CoreAudio) for everyday use, not just
-  development.
+- **HDMI-CEC** *(experimental)*: automatically powers the amp on when playback
+  starts, switches its input to the Pi, and sends it to standby after
+  inactivity. CEC implementations vary a lot between amp brands and models —
+  it may not work with every amplifier. See
+  [Raspberry Pi — HDMI & CEC setup](#raspberry-pi--hdmi--cec-setup) below.
+- Also runs well on **macOS** (CoreAudio) for everyday use.
 
 ---
 

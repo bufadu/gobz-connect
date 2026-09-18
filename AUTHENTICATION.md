@@ -28,8 +28,6 @@ user_id: "12345678"
 user_auth_token: "your-user-auth-token-here"
 ```
 
-The `email` and `password` fields are no longer needed and can be removed or left empty.
-
 ## Token lifetime
 
 `user_auth_token` is a long-lived session token — it does not expire after a fixed time
