@@ -843,6 +843,7 @@ func (s *QobuzStream) wsHandleMessage(msg *PbQConnectMessage) {
 
 	case MsgTypeSrvrCtrlVolumeChanged:
 		if msg.SrvrCtrlVolumeChanged != nil && msg.SrvrCtrlVolumeChanged.RendererID == s.rendererID {
+			log.Printf("stream: SrvrCtrlVolumeChanged volume=%d (server→all-clients)", msg.SrvrCtrlVolumeChanged.Volume)
 			s.applyVolume(msg.SrvrCtrlVolumeChanged.Volume)
 		}
 
@@ -884,6 +885,7 @@ func (s *QobuzStream) wsHandleMessage(msg *PbQConnectMessage) {
 		}
 		sv := msg.SrvrRndrSetVolume
 		if sv.Volume != 0 || sv.VolumeDelta == 0 {
+			log.Printf("stream: SrvrRndrSetVolume volume=%d (absolute, from client)", sv.Volume)
 			s.applyVolume(sv.Volume)
 		} else {
 			cur := int32(s.player.volume.Load())
@@ -893,6 +895,7 @@ func (s *QobuzStream) wsHandleMessage(msg *PbQConnectMessage) {
 			} else if newVol > 100 {
 				newVol = 100
 			}
+			log.Printf("stream: SrvrRndrSetVolume delta=%+d volume=%d→%d (from client)", sv.VolumeDelta, cur, newVol)
 			s.applyVolume(uint32(newVol))
 		}
 		// Echo the new volume back so the Qobuz app confirms the change.
@@ -1290,10 +1293,12 @@ func qualityLevelToFormat(level int32) int {
 // at 90; otherwise the beep volume is updated directly.
 func (s *QobuzStream) applyVolume(vol uint32) {
 	if s.cec != nil && s.cfg.CEC.VolumeControl {
+		log.Printf("stream: applying volume %d%% via CEC (amp volume)", vol)
 		// Keep player.volume in sync so wsSetRendererVolume echoes correctly.
 		s.player.volume.Store(vol)
 		s.cec.OnVolume(vol)
 	} else {
+		log.Printf("stream: applying volume %d%% (beep)", vol)
 		s.player.SetVolume(vol)
 	}
 }
