@@ -165,38 +165,33 @@ func speakerResume() error {
 // open opens a fresh PCM at the new sample rate first, and only tears down
 // the currently running device/write goroutine (draining or dropping its
 // buffer as requested) once the new one is confirmed working. If the new
-// device fails to open (e.g. the amp is off and HDMI has no valid EDID,
-// which surfaces as ALSA error 524/ENOTSUPP), the previous device and its
-// write goroutine are left completely untouched so playback can fall back
-// to resampling into it instead of going permanently silent.
+// device fails to open because the old one is still holding it (EBUSY —
+// common on plain hw:/default devices that only allow one concurrent PCM
+// open), the old device is released and the open is retried once, since
+// that failure mode is expected during a normal sample-rate transition and
+// not a sign the hardware is unreachable. Any other failure (e.g. the amp is
+// off and HDMI has no valid EDID, surfacing as ALSA error 524/ENOTSUPP)
+// leaves the previous device and its write goroutine completely untouched
+// so playback can fall back to resampling into it instead of going
+// permanently silent.
 func (s *linuxSpeaker) open(sr beep.SampleRate, bufSize int, drain bool) error {
 	// Period: 20 ms; buffer: whatever the caller requested (usually 200 ms).
 	periodFrames := C.snd_pcm_uframes_t(int(sr) / 50)
 	bufFrames := C.snd_pcm_uframes_t(bufSize)
 
 	var newPCM *C.snd_pcm_t
-	if rc := C.alsa_open(&newPCM, C.uint(sr), &periodFrames, &bufFrames); rc < 0 {
+	rc := C.alsa_open(&newPCM, C.uint(sr), &periodFrames, &bufFrames)
+	if rc == -C.EBUSY && s.pcm != nil {
+		s.closeCurrent(drain)
+		rc = C.alsa_open(&newPCM, C.uint(sr), &periodFrames, &bufFrames)
+	}
+	if rc < 0 {
 		return fmt.Errorf("ALSA open %d Hz: %s", int(sr), C.GoString(C.snd_strerror(rc)))
 	}
 
 	// New device opened successfully — now it's safe to stop the running
-	// write goroutine (it polls snd_pcm_wait every 5ms so it will notice the
-	// stop within ~5 ms) and close the old PCM.
-	if s.stopCh != nil {
-		close(s.stopCh)
-		<-s.doneCh
-		s.stopCh = nil
-		s.doneCh = nil
-	}
-
-	if s.pcm != nil {
-		if drain {
-			C.snd_pcm_drain(s.pcm) // play remaining buffered samples
-		} else {
-			C.snd_pcm_drop(s.pcm) // discard immediately (e.g. HDMI reinit)
-		}
-		C.snd_pcm_close(s.pcm)
-	}
+	// write goroutine (if not already stopped above) and close the old PCM.
+	s.closeCurrent(drain)
 
 	s.pcm = newPCM
 	s.periodFrames = int(periodFrames)
@@ -205,6 +200,30 @@ func (s *linuxSpeaker) open(sr beep.SampleRate, bufSize int, drain bool) error {
 	s.doneCh = make(chan struct{})
 	go s.writeLoop()
 	return nil
+}
+
+// closeCurrent stops the running write goroutine (if any) and drains/drops
+// then closes the current PCM (if any). Safe to call when there is nothing
+// to close (e.g. on the very first open, or if already closed by an earlier
+// EBUSY retry in the same open() call).
+func (s *linuxSpeaker) closeCurrent(drain bool) {
+	// The write goroutine polls snd_pcm_wait every 5ms so it will notice the
+	// stop within ~5 ms.
+	if s.stopCh != nil {
+		close(s.stopCh)
+		<-s.doneCh
+		s.stopCh = nil
+		s.doneCh = nil
+	}
+	if s.pcm != nil {
+		if drain {
+			C.snd_pcm_drain(s.pcm) // play remaining buffered samples
+		} else {
+			C.snd_pcm_drop(s.pcm) // discard immediately (e.g. HDMI reinit)
+		}
+		C.snd_pcm_close(s.pcm)
+		s.pcm = nil
+	}
 }
 
 // writeLoop reads audio from the mixer and writes it to the ALSA PCM device.
