@@ -84,10 +84,20 @@ import (
 	"fmt"
 	"log"
 	"sync"
+	"time"
 	"unsafe"
 
 	"github.com/gopxl/beep/v2"
 )
+
+// maxWriteStall bounds how long writeLoop will keep retrying a single period
+// on EAGAIN before giving up on it. Without this, a device that is open but
+// can no longer actually drain audio (e.g. the amp/HDMI link died after the
+// PCM was opened, so the buffer never empties) leaves writeLoop spinning on
+// the same period forever — it never returns to pull fresh audio from the
+// mixer, so the current track never finishes and runLoop deadlocks waiting
+// for a gapless slot to free up.
+const maxWriteStall = 2 * time.Second
 
 // ---- linuxSpeaker -----------------------------------------------------------
 
@@ -260,6 +270,7 @@ func (s *linuxSpeaker) writeLoop() {
 		// (buffer full) or -EPIPE (underrun, already recovered by alsa_write).
 		// Loop until all frames are written or we are asked to stop.
 		written := 0
+		var stuckSince time.Time
 		for written < n {
 			select {
 			case <-s.stopCh:
@@ -275,10 +286,19 @@ func (s *linuxSpeaker) writeLoop() {
 			switch {
 			case rc > 0:
 				written += int(rc)
+				stuckSince = time.Time{}
 			case C.alsa_is_eagain(rc) != 0: // buffer full in non-blocking mode
+				if stuckSince.IsZero() {
+					stuckSince = time.Now()
+				} else if time.Since(stuckSince) > maxWriteStall {
+					log.Printf("speaker: ALSA write stuck (buffer full) for over %s - device likely unreachable; dropping this period so playback can keep advancing", maxWriteStall)
+					written = n
+					break
+				}
 				// Wait up to 5 ms for space, then re-check stop.
 				C.snd_pcm_wait(s.pcm, 5)
 			case C.alsa_is_epipe(rc) != 0: // underrun; alsa_write already called snd_pcm_prepare
+				stuckSince = time.Time{}
 				// Just retry the write.
 			default:
 				log.Printf("speaker: ALSA write error: %s",
