@@ -253,6 +253,20 @@ func (p *Player) Pause(paused bool) {
 // IsRunning reports whether the player goroutine is active.
 func (p *Player) IsRunning() bool { return p.running.Load() }
 
+// reportDeviceUnavailable logs and tells the server we've stopped, for the
+// caller (runLoop) to then return cleanly. Playback resumes automatically
+// once the server sends a new play command (stream.go's SrvrRndrSetState
+// case already restarts Run() whenever !IsRunning()), by which point the
+// audio device may be reachable again.
+func (p *Player) reportDeviceUnavailable(context string) {
+	log.Printf("player: %s — no audio device available, stopping until a play command is received", context)
+	p.stateMu.Lock()
+	p.playerState.PlayingState = PlayingStateStopped
+	p.playerState.BufferState = BufferStateUnknown
+	p.stateMu.Unlock()
+	go p.sendPlayerState()
+}
+
 // CurrentTrack returns the track currently playing.
 func (p *Player) CurrentTrack() *QueueTrack {
 	p.currentMu.Lock()
@@ -508,6 +522,7 @@ func (p *Player) Run() {
 	speakerMu.Unlock()
 	if speakerErr != nil {
 		log.Printf("player: speaker init: %v", speakerErr)
+		p.reportDeviceUnavailable("speaker init failed")
 		return
 	}
 	if !deferSpeakerInit {
@@ -744,6 +759,7 @@ func (p *Player) runLoop(gq *gaplessQueue, advanceCh <-chan struct{}, speakerSR 
 					if err := speakerInit(sr, sr.N(200*time.Millisecond)); err != nil {
 						speakerMu.Unlock()
 						log.Printf("player: deferred speaker init at %d Hz: %v", sr, err)
+						p.reportDeviceUnavailable("deferred speaker init failed")
 						return
 					}
 					speakerInitDone = true
@@ -772,6 +788,10 @@ func (p *Player) runLoop(gq *gaplessQueue, advanceCh <-chan struct{}, speakerSR 
 					// track's native SR. Will fail if oto context is locked
 					// (sets speakerAdaptFailed so we don't retry).
 					speakerSR = p.adaptSpeakerForTrack(beep.SampleRate(qt.SamplingRate))
+					if !speakerDeviceAvailable() {
+						p.reportDeviceUnavailable("speaker reinit failed and no device could be restored")
+						return
+					}
 				}
 			}
 		}
@@ -792,6 +812,10 @@ func (p *Player) runLoop(gq *gaplessQueue, advanceCh <-chan struct{}, speakerSR 
 					if isFirst && p.adaptiveSampleRate && !p.speakerAdaptFailed &&
 						qt.SamplingRate > 0 && beep.SampleRate(qt.SamplingRate) != speakerSR {
 						speakerSR = p.adaptSpeakerForTrack(beep.SampleRate(qt.SamplingRate))
+						if !speakerDeviceAvailable() {
+							p.reportDeviceUnavailable("speaker reinit failed and no device could be restored")
+							return
+						}
 					}
 					gt, err = p.loadGaplessTrack(qt, nextID, speakerSR)
 				}

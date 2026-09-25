@@ -23,6 +23,12 @@ func speakerReinit(_ beep.SampleRate, _ int) error {
 
 func speakerReinitSupported() bool { return false }
 
+// speakerDeviceAvailable always reports true on non-Linux platforms: the
+// oto-backed device is opened once at startup and never closed/reopened
+// (speakerReinit is unsupported here — see above), so there's no equivalent
+// "device lost" state to detect.
+func speakerDeviceAvailable() bool { return true }
+
 func speakerPlay(s ...beep.Streamer)  { speaker.Play(s...) }
 func speakerClear()                   { speaker.Clear() }
 func speakerLock()                    { speaker.Lock() }

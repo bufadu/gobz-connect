@@ -109,6 +109,8 @@ type linuxSpeaker struct {
 
 	pcm          *C.snd_pcm_t
 	periodFrames int
+	sr           beep.SampleRate // sample rate of the currently open pcm, if any
+	bufFrames    int             // buffer size (frames) used to open pcm, if any
 
 	// stopCh is closed to ask the write goroutine to exit; doneCh is closed
 	// by the goroutine once it has exited.
@@ -131,6 +133,11 @@ func speakerReinit(sr beep.SampleRate, bufSize int) error {
 }
 
 func speakerReinitSupported() bool { return true }
+
+// speakerDeviceAvailable reports whether an ALSA device is currently open.
+// False only in the rare case where a reinit failed and even restoring the
+// previous device failed — e.g. the amp is now completely unreachable.
+func speakerDeviceAvailable() bool { return _lspk.pcm != nil }
 
 func speakerPlay(s ...beep.Streamer) {
 	_lspk.mixMu.Lock()
@@ -192,19 +199,50 @@ func (s *linuxSpeaker) open(sr beep.SampleRate, bufSize int, drain bool) error {
 	var newPCM *C.snd_pcm_t
 	rc := C.alsa_open(&newPCM, C.uint(sr), &periodFrames, &bufFrames)
 	if rc == -C.EBUSY && s.pcm != nil {
+		// This hardware has no dmix, so only one PCM handle can be open at a
+		// time -- opening at a new rate always requires closing the old
+		// device first, which is why EBUSY here is expected, not a sign the
+		// hardware is unreachable. But if the retry below still fails (e.g.
+		// the amp went unreachable in the meantime), the old device is
+		// already gone with nothing to replace it, silently orphaning the
+		// write goroutine and freezing playback forever. Remember its
+		// parameters so we can restore it in that case.
+		oldSR, oldBufFrames := s.sr, s.bufFrames
 		s.closeCurrent(drain)
 		rc = C.alsa_open(&newPCM, C.uint(sr), &periodFrames, &bufFrames)
+		if rc < 0 {
+			restorePeriod := C.snd_pcm_uframes_t(int(oldSR) / 50)
+			restoreBuf := C.snd_pcm_uframes_t(oldBufFrames)
+			var restoredPCM *C.snd_pcm_t
+			if rrc := C.alsa_open(&restoredPCM, C.uint(oldSR), &restorePeriod, &restoreBuf); rrc >= 0 {
+				log.Printf("player: ALSA open %d Hz failed (%s); restored previous device at %d Hz instead of going silent",
+					int(sr), C.GoString(C.snd_strerror(rc)), int(oldSR))
+				s.pcm = restoredPCM
+				s.periodFrames = int(restorePeriod)
+				s.sr = oldSR
+				s.bufFrames = int(restoreBuf)
+				s.stopCh = make(chan struct{})
+				s.doneCh = make(chan struct{})
+				go s.writeLoop()
+			} else {
+				log.Printf("player: ALSA open %d Hz failed (%s); restoring previous device at %d Hz also failed (%s) -- no audio device available",
+					int(sr), C.GoString(C.snd_strerror(rc)), int(oldSR), C.GoString(C.snd_strerror(rrc)))
+			}
+			return fmt.Errorf("ALSA open %d Hz: %s", int(sr), C.GoString(C.snd_strerror(rc)))
+		}
 	}
 	if rc < 0 {
 		return fmt.Errorf("ALSA open %d Hz: %s", int(sr), C.GoString(C.snd_strerror(rc)))
 	}
 
-	// New device opened successfully — now it's safe to stop the running
+	// New device opened successfully -- now it's safe to stop the running
 	// write goroutine (if not already stopped above) and close the old PCM.
 	s.closeCurrent(drain)
 
 	s.pcm = newPCM
 	s.periodFrames = int(periodFrames)
+	s.sr = sr
+	s.bufFrames = int(bufFrames)
 
 	s.stopCh = make(chan struct{})
 	s.doneCh = make(chan struct{})
