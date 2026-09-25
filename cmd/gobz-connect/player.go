@@ -116,6 +116,7 @@ type Player struct {
 	stopWanted      atomic.Bool // set by Stop(); cleared at the start of each Run()
 	queueExhausted  atomic.Bool // set when Run() exits because the queue ran out (not stopped)
 	deviceUnavailable atomic.Bool // set by reportDeviceUnavailable(); cleared at the start of each Run()
+	deviceUnavailableUntil atomic.Int64 // unix millis; 0 or past = no active cooldown
 	closeCh      chan struct{} // closed by Close() to stop the persistent heartbeat
 	currentFormat atomic.Int32  // AudioFormat* constant for the currently playing file
 
@@ -254,6 +255,14 @@ func (p *Player) Pause(paused bool) {
 // IsRunning reports whether the player goroutine is active.
 func (p *Player) IsRunning() bool { return p.running.Load() }
 
+// deviceRetryCooldown limits how often Run() will retry opening the audio
+// device after reportDeviceUnavailable() stopped it. Without this, the
+// server echoing our own "stopped" broadcast back as a fresh play/pause
+// state immediately re-triggers Run() (stream.go's restart-on-play logic),
+// which fails again instantly since the amp hasn't had time to change
+// state — a tight retry storm with no pause between attempts.
+const deviceRetryCooldown = 3 * time.Second
+
 // reportDeviceUnavailable logs and tells the server we've stopped, for the
 // caller (runLoop) to then return cleanly. Playback resumes automatically
 // once the server sends a new play command (stream.go's SrvrRndrSetState
@@ -262,6 +271,7 @@ func (p *Player) IsRunning() bool { return p.running.Load() }
 func (p *Player) reportDeviceUnavailable(context string) {
 	log.Printf("player: %s — no audio device available, stopping until a play command is received", context)
 	p.deviceUnavailable.Store(true)
+	p.deviceUnavailableUntil.Store(time.Now().Add(deviceRetryCooldown).UnixMilli())
 	p.stateMu.Lock()
 	p.playerState.PlayingState = PlayingStateStopped
 	p.playerState.BufferState = BufferStateUnknown
@@ -457,6 +467,12 @@ func (p *Player) Run() {
 		return
 	}
 	defer p.running.Store(false)
+
+	if until := p.deviceUnavailableUntil.Load(); until > 0 && time.Now().UnixMilli() < until {
+		// Still within the post-failure cooldown — skip silently, the
+		// server already has our last "stopped" broadcast.
+		return
+	}
 
 	// Clear any stale stop state left by a previous Run() cycle, then drain
 	// the channel token. This handles two races:
