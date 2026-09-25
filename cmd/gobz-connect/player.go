@@ -115,6 +115,7 @@ type Player struct {
 	stopCh       chan struct{} // buffered(1); closed by Stop()
 	stopWanted      atomic.Bool // set by Stop(); cleared at the start of each Run()
 	queueExhausted  atomic.Bool // set when Run() exits because the queue ran out (not stopped)
+	deviceUnavailable atomic.Bool // set by reportDeviceUnavailable(); cleared at the start of each Run()
 	closeCh      chan struct{} // closed by Close() to stop the persistent heartbeat
 	currentFormat atomic.Int32  // AudioFormat* constant for the currently playing file
 
@@ -260,6 +261,7 @@ func (p *Player) IsRunning() bool { return p.running.Load() }
 // audio device may be reachable again.
 func (p *Player) reportDeviceUnavailable(context string) {
 	log.Printf("player: %s — no audio device available, stopping until a play command is received", context)
+	p.deviceUnavailable.Store(true)
 	p.stateMu.Lock()
 	p.playerState.PlayingState = PlayingStateStopped
 	p.playerState.BufferState = BufferStateUnknown
@@ -465,6 +467,7 @@ func (p *Player) Run() {
 	//     a false-stop detection in the new runLoop.
 	p.stopWanted.Store(false)
 	p.queueExhausted.Store(false)
+	p.deviceUnavailable.Store(false)
 	p.speakerAdaptFailed = false // reset per session; speaker.Init failure is sticky within a session
 	select {
 	case <-p.stopCh:
@@ -606,7 +609,7 @@ func (p *Player) Run() {
 	// called), mark the queue as exhausted and send a stopped state.  This
 	// prevents RendererStateUpdated echoes of our last "playing" heartbeat
 	// from triggering an unwanted restart of the last track.
-	if !p.stopWanted.Load() {
+	if !p.stopWanted.Load() && !p.deviceUnavailable.Load() {
 		p.queueExhausted.Store(true)
 		p.stateMu.Lock()
 		p.playerState.PlayingState = PlayingStateStopped
